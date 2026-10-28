@@ -1,63 +1,105 @@
 const express = require("express");
 const cors = require("cors");
+const mongoose = require("mongoose");
 
-// Create server app
 const app = express();
 app.use(cors());
-app.use(express.json()); // communication bw client and server is thru JSON
+app.use(express.json());
 
-// Database connection code
-const mongoose = require("mongoose")
-mongoose.connect("mongodb://127.0.0.1:27017/college")
-  .then(() => {
-    console.log("DB connected")
-  })
-  .catch((err) => {
-    console.log(err)
-  })
+mongoose.connect("mongodb://127.0.0.1:27017/blood_donor_manager")
+  .then(() => console.log("MongoDB connected"))
+  .catch((err) => console.log(err));
 
-const studentSchema = new mongoose.Schema({
-  name: {type: String, required: true},
-  regno: {type: Number, required: true, unique: true},
-  cgpa: {type: Number, required: true},
-})
+const donorSchema = new mongoose.Schema({
+  donorId: { type: String, required: true, unique: true },
+  name: { type: String, required: true },
+  bloodGroup: { type: String, required: true },
+  contactNumber: { type: String, required: true },
+  available: { type: Boolean, default: true }
+});
+const Donor = mongoose.model("Donor", donorSchema, "donors");
 
-// Model: logical object between server program and MongoDB database
-// Last param: existing collection name ("students") created in MongoDB compass
-// (name_of_model, structure_of_model, collection_name)
-const Student = mongoose.model("Student", studentSchema, "students")
-
-// Create HTTP APIs
-app.get("/", async (req, res) => {
-  // res.send("Hello from express boi")
-  res.status(200).json({"message": "Data saved boi"})
+app.get("/", (req, res) => {
+  res.json({ message: "Blood Donor Manager API" });
 });
 
-app.post("/saveStudent", async (req, res) => {
+// View all donors, or find donors by blood group.
+app.get("/api/viewAll", async (req, res) => {
   try {
-    // Receive from React -> Express (in JSON format)
-    const student = req.body
-
-    // Prepare data wrt Student model, save/store to DB
-    const newStudent = new Student(student)
-    await newStudent.save() // await creates a thread
-
-    try {
-      res.status(200).json({
-        "message": "Data saved successfully"
-      }) 
-    } catch(err) {
-      res.status(500).json({
-        "message": "Error: " + err
-      })
+    let donors;
+    if (req.query.bloodGroup) {
+      donors = await Donor.find({ bloodGroup: req.query.bloodGroup });
+    } else {
+      donors = await Donor.find();
     }
-
+    res.json(donors);
   } catch (err) {
-    console.log(err)
+    res.status(500).json({ message: err.message });
   }
-})
+});
 
-// Start server
+// Find one donor using the Donor ID shown in the table.
+app.get("/api/findDonor", async (req, res) => {
+  try {
+    if (!req.query.donorId) {
+      return res.status(400).json({ message: "Enter a Donor ID" });
+    }
+    const donor = await Donor.findOne({ donorId: req.query.donorId });
+    if (!donor) {
+      return res.status(404).json({ message: "Donor not found" });
+    }
+    res.json(donor);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+// Create a donor.
+app.post("/api/addNew", async (req, res) => {
+  try {
+    const donor = new Donor(req.body);
+    await donor.save();
+    res.json({ message: "Donor registered successfully" });
+  } catch (err) {
+    res.status(400).json({ message: err.code === 11000 ? "Donor ID already exists" : err.message });
+  }
+});
+
+// Update the donor found by its original Donor ID.
+app.post("/api/updateDonor", async (req, res) => {
+  try {
+    const { originalDonorId, donorId, name, bloodGroup, contactNumber, available } = req.body;
+    if (!originalDonorId) {
+      return res.status(400).json({ message: "Enter a Donor ID" });
+    }
+    const donor = await Donor.findOneAndUpdate({ donorId: originalDonorId }, {
+      donorId, name, bloodGroup, contactNumber, available
+    });
+    if (!donor) {
+      return res.status(404).json({ message: "Donor not found" });
+    }
+    res.json({ message: "Donor updated successfully" });
+  } catch (err) {
+    res.status(400).json({ message: err.code === 11000 ? "Donor ID already exists" : err.message });
+  }
+});
+
+// Delete a donor using its Donor ID.
+app.post("/api/deleteDonor", async (req, res) => {
+  try {
+    if (!req.body.donorId) {
+      return res.status(400).json({ message: "Enter a Donor ID" });
+    }
+    const donor = await Donor.findOneAndDelete({ donorId: req.body.donorId });
+    if (!donor) {
+      return res.status(404).json({ message: "Donor not found" });
+    }
+    res.json({ message: "Donor deleted successfully" });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
 app.listen(5000, () => {
-  console.log("Server is running at port 5000 boi")
+  console.log("Server running at http://localhost:5000");
 });
